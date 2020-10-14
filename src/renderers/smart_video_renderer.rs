@@ -147,9 +147,6 @@ impl GLRenderer {
                 .activate()
                 .unwrap();
 
-            gl::ClearColor(0.0f32, 0.0f32, 0.0f32, 1.0f32);
-            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
             gl::BufferData(
                 gl::ARRAY_BUFFER,
                 std::mem::size_of_val(&GLRenderer::VERTICES_TEXTURES) as isize,
@@ -216,6 +213,7 @@ impl GLRenderer {
                 "widths[i] = {}, height[i] = {}",
                 widths[i as usize], heights[i as usize]
             );
+            
             unsafe {
                 let texture_activation_number = texture_number(i as u8);
                 gl::ActiveTexture(texture_activation_number);
@@ -250,9 +248,14 @@ impl GLRenderer {
                 );
                 gl::Uniform1i(self.texture_sampler[i as usize], i as GLint);
             }
+            
         }
         unsafe {
-            
+            self.vertex_array_object
+                .as_ref()
+                .unwrap()
+                .activate()
+                .unwrap();
             gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
         }
     }
@@ -302,7 +305,7 @@ impl renderer::Renderer for SmartVideoRenderer {
 
         //Either reads from an image or from random data
         let from_image = false;
-
+        
         if from_image {
             let mut f = File::open("/home/dev/orwell/lab/orwell_gtk/assets/vaporwave.yuv")
                 .expect("Unable to open file");
@@ -324,6 +327,7 @@ impl renderer::Renderer for SmartVideoRenderer {
                 v[i] = num as u8;
             }
         }
+        
         self.scene.borrow_mut().draw(
             &[y.as_slice(), u.as_slice(), v.as_slice()],
             &[width, width / 2, width / 2],
