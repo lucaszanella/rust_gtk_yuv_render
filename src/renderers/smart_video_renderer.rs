@@ -11,6 +11,7 @@ use super::renderer;
 use super::renderer_error::RendererError;
 use super::shader::Shader;
 use super::vertex_array_object::VertexArrayObject;
+use super::vertex_buffer_object::VertexBufferObject;
 
 pub const VIDEO_VERTEX_SHADER: &'static str = "#version 300 es
 layout (location = 0) in vec3 aPos;
@@ -55,6 +56,7 @@ void main()
     
     rgba.a = alpha;
     FragColor = rgba;
+    //FragColor = vec4(0.0, 0.5, 0.5, 1.0);
 }";
 
 #[warn(dead_code)]
@@ -79,6 +81,7 @@ struct GLRenderer {
     texture_id: [u32; GLRenderer::TEXTURE_NUMBER as usize],
     texture_sampler: [i32; GLRenderer::TEXTURE_NUMBER as usize],
     vertex_array_object: Option<VertexArrayObject>,
+    vertex_buffer_object: Option<VertexBufferObject>,
     alpha: i32,
     vertex_in_location: i32,
     texture_in_location: i32,
@@ -98,6 +101,7 @@ impl GLRenderer {
             texture_id: [0; GLRenderer::TEXTURE_NUMBER as usize],
             texture_sampler: [0; GLRenderer::TEXTURE_NUMBER as usize],
             vertex_array_object: None,
+            vertex_buffer_object: None,
             alpha: 0,
             vertex_in_location: 0,
             texture_in_location: 0,
@@ -130,15 +134,20 @@ impl GLRenderer {
         }
 
         self.vertex_array_object = Some(VertexArrayObject::new());
-
+        self.vertex_buffer_object = Some(VertexBufferObject::new());
         unsafe {
             self.vertex_array_object
                 .as_ref()
                 .unwrap()
                 .activate()
                 .unwrap();
+            self.vertex_buffer_object
+                .as_ref()
+                .unwrap()
+                .activate()
+                .unwrap();
 
-            gl::ClearColor(1.0f32, 0.0f32, 0.0f32, 1.0f32);
+            gl::ClearColor(0.0f32, 0.0f32, 0.0f32, 1.0f32);
             gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
             gl::BufferData(
@@ -203,7 +212,10 @@ impl GLRenderer {
         }
         for i in 0..GLRenderer::TEXTURE_NUMBER {
             println!("texture_id[i]= {}", self.texture_id[i as usize]);
-            println!("widths[i] = {}, height[i] = {}", widths[i as usize], heights[i as usize]);
+            println!(
+                "widths[i] = {}, height[i] = {}",
+                widths[i as usize], heights[i as usize]
+            );
             unsafe {
                 let texture_activation_number = texture_number(i as u8);
                 gl::ActiveTexture(texture_activation_number);
@@ -239,19 +251,8 @@ impl GLRenderer {
                 gl::Uniform1i(self.texture_sampler[i as usize], i as GLint);
             }
         }
-
-        self.vertex_array_object
-            .as_ref()
-            .unwrap()
-            .activate()
-            .unwrap();
-        
         unsafe {
-            self.vertex_array_object
-                .as_ref()
-                .unwrap()
-                .activate()
-                .unwrap();
+            
             gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
         }
     }
@@ -292,10 +293,9 @@ impl renderer::Renderer for SmartVideoRenderer {
         println!("render called");
         let width = 1280;
         let height = 720;
-        
-        let mut y = std::vec::Vec::new();
-        let mut u = std::vec::Vec::new();
-        let mut v = std::vec::Vec::new();
+        let mut y: std::vec::Vec<u8> = std::vec::Vec::new();
+        let mut u: std::vec::Vec<u8> = std::vec::Vec::new();
+        let mut v: std::vec::Vec<u8> = std::vec::Vec::new();
         y.resize((width * height) as usize, 0);
         u.resize((width * height / 4) as usize, 0);
         v.resize((width * height / 4) as usize, 0);
@@ -305,7 +305,7 @@ impl renderer::Renderer for SmartVideoRenderer {
 
         if from_image {
             let mut f = File::open("/home/dev/orwell/lab/orwell_gtk/assets/vaporwave.yuv")
-            .expect("Unable to open file");
+                .expect("Unable to open file");
 
             f.read_exact(y.as_mut_slice()).unwrap();
             f.read_exact(u.as_mut_slice()).unwrap();

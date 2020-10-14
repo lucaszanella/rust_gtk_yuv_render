@@ -1,6 +1,6 @@
 pub mod shader;
 pub mod vertex_array_object;
-//pub mod vertex_buffer_object;
+pub mod vertex_buffer_object;
 pub mod renderer_error;
 pub mod renderer;
 //pub mod empty_renderer;
