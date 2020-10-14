@@ -5,7 +5,6 @@ use std::cell::RefCell;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::fs::File;
-use std::io;
 use std::io::prelude::*;
 
 use super::renderer;
@@ -78,7 +77,7 @@ fn texture_number(index: u8) -> u32 {
 struct GLRenderer {
     program: Option<Shader>,
     texture_id: [u32; GLRenderer::TEXTURE_NUMBER as usize],
-    texture_location: [i32; GLRenderer::TEXTURE_NUMBER as usize],
+    texture_sampler: [i32; GLRenderer::TEXTURE_NUMBER as usize],
     vertex_array_object: Option<VertexArrayObject>,
     alpha: i32,
     vertex_in_location: i32,
@@ -97,7 +96,7 @@ impl GLRenderer {
         let r = GLRenderer {
             program: None,
             texture_id: [0; GLRenderer::TEXTURE_NUMBER as usize],
-            texture_location: [0; GLRenderer::TEXTURE_NUMBER as usize],
+            texture_sampler: [0; GLRenderer::TEXTURE_NUMBER as usize],
             vertex_array_object: None,
             alpha: 0,
             vertex_in_location: 0,
@@ -133,14 +132,14 @@ impl GLRenderer {
         self.vertex_array_object = Some(VertexArrayObject::new());
 
         unsafe {
-            gl::ClearColor(1.0f32, 0.0f32, 0.0f32, 1.0f32);
-            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
-
             self.vertex_array_object
                 .as_ref()
                 .unwrap()
                 .activate()
                 .unwrap();
+
+            gl::ClearColor(1.0f32, 0.0f32, 0.0f32, 1.0f32);
+            gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
 
             gl::BufferData(
                 gl::ARRAY_BUFFER,
@@ -169,22 +168,22 @@ impl GLRenderer {
             );
             gl::EnableVertexAttribArray(self.texture_in_location as u32);
 
-            self.texture_location[0] = gl::GetUniformLocation(
+            self.texture_sampler[0] = gl::GetUniformLocation(
                 current_fragment_program.as_ref().unwrap().program(),
                 CString::new("tex_y").unwrap().as_ptr(),
             );
-            self.texture_location[1] = gl::GetUniformLocation(
+            self.texture_sampler[1] = gl::GetUniformLocation(
                 current_fragment_program.as_ref().unwrap().program(),
                 CString::new("tex_u").unwrap().as_ptr(),
             );
-            self.texture_location[2] = gl::GetUniformLocation(
+            self.texture_sampler[2] = gl::GetUniformLocation(
                 current_fragment_program.as_ref().unwrap().program(),
                 CString::new("tex_v").unwrap().as_ptr(),
             );
 
-            println!("tex_y: {}", self.texture_location[0]);
-            println!("tex_u: {}", self.texture_location[1]);
-            println!("tex_v: {}", self.texture_location[2]);
+            println!("tex_y: {}", self.texture_sampler[0]);
+            println!("tex_u: {}", self.texture_sampler[1]);
+            println!("tex_v: {}", self.texture_sampler[2]);
 
             self.alpha = gl::GetUniformLocation(
                 current_fragment_program.as_ref().unwrap().program(),
@@ -204,8 +203,22 @@ impl GLRenderer {
         }
         for i in 0..GLRenderer::TEXTURE_NUMBER {
             println!("texture_id[i]= {}", self.texture_id[i as usize]);
+            println!("widths[i] = {}, height[i] = {}", widths[i as usize], heights[i as usize]);
             unsafe {
+                let texture_activation_number = texture_number(i as u8);
+                gl::ActiveTexture(texture_activation_number);
                 gl::BindTexture(gl::TEXTURE_2D, self.texture_id[i as usize]);
+                gl::TexImage2D(
+                    gl::TEXTURE_2D,
+                    0,
+                    gl::RED as i32,
+                    widths[i as usize],
+                    heights[i as usize],
+                    0,
+                    gl::RED,
+                    gl::UNSIGNED_BYTE,
+                    yuv[i as usize].as_ptr() as *const u8 as *const libc::c_void,
+                );
                 gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, gl::LINEAR as GLint);
                 gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, gl::LINEAR as GLint);
                 gl::TexParameteri(
@@ -223,34 +236,16 @@ impl GLRenderer {
                     gl::TEXTURE_WRAP_R,
                     gl::CLAMP_TO_EDGE as GLint,
                 );
-                gl::TexImage2D(
-                    gl::TEXTURE_2D,
-                    0,
-                    gl::RED as i32,
-                    widths[i as usize],
-                    heights[i as usize],
-                    0,
-                    gl::RED,
-                    gl::UNSIGNED_BYTE,
-                    yuv[i as usize].as_ptr() as *const u8 as *const libc::c_void,
-                );
-                gl::Uniform1i(self.texture_location[i as usize], i as GLint);
+                gl::Uniform1i(self.texture_sampler[i as usize], i as GLint);
             }
         }
+
         self.vertex_array_object
             .as_ref()
             .unwrap()
             .activate()
             .unwrap();
-
-        for j in 0..GLRenderer::TEXTURE_NUMBER {
-            unsafe {
-                let texture_activation_number = texture_number(j as u8);
-                gl::ActiveTexture(texture_activation_number);
-                gl::BindTexture(gl::TEXTURE_2D, self.texture_id[j as usize]);
-                gl::Uniform1i(self.texture_location[j as usize], j as GLint);
-            }
-        }
+        
         unsafe {
             self.vertex_array_object
                 .as_ref()
@@ -297,9 +292,7 @@ impl renderer::Renderer for SmartVideoRenderer {
         println!("render called");
         let width = 1280;
         let height = 720;
-        let mut f = File::open("/home/dev/orwell/lab/orwell_gtk/assets/vaporwave.yuv")
-            .expect("Unable to open file");
-
+        
         let mut y = std::vec::Vec::new();
         let mut u = std::vec::Vec::new();
         let mut v = std::vec::Vec::new();
@@ -308,9 +301,12 @@ impl renderer::Renderer for SmartVideoRenderer {
         v.resize((width * height / 4) as usize, 0);
 
         //Either reads from an image or from random data
-        let from_image = true;
+        let from_image = false;
 
         if from_image {
+            let mut f = File::open("/home/dev/orwell/lab/orwell_gtk/assets/vaporwave.yuv")
+            .expect("Unable to open file");
+
             f.read_exact(y.as_mut_slice()).unwrap();
             f.read_exact(u.as_mut_slice()).unwrap();
             f.read_exact(v.as_mut_slice()).unwrap();
